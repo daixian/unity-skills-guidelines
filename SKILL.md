@@ -12,8 +12,7 @@ description: "规定 CKStudy 项目中 UnitySkills 的连接、模块选择、�
 1. 普通场景、资源、GameObject、组件、脚本和项目操作，加载 `.agents/skills/unity-skills` 下对应模块；不要在本 Skill 重复模块文档或猜测参数。
 2. 当前项目 C# 编译使用 `.agents/skills/unity-skills-guidelines/scripts/unity_compile.py`；Unity Test Runner 使用 `.agents/skills/unity-skills-guidelines/scripts/unity_test.py`。
 3. 运行时 UI 树检查、点击、拖动、滚轮和鼠标队列使用 `unity-ui-interaction`；创建或布局 UGUI 使用 `unity-ui-interaction`。
-4. `.xgw`、官方 Unity CliCommand、临时 Unity Editor C# 和组件 ContextMenu 使用 `graphon-workflow`。
-5. 编写或重构 Unity 代码前，按任务加载 `unity-skills` 中对应的 advisory 模块。
+4. 移动两个及以上文件时 使用 Unity CLI 的 `eval` 或临时 CliCommand  实现。
 
 ## 安全与调用规则
 
@@ -35,16 +34,7 @@ unity_skills.call_skill(
 )
 ```
 
-移动两个及以上文件时使用 `asset_move_batch`，并把 `items` 作为 JSON 字符串传入，不要传 Python list：
-
-```python
-unity_skills.call_skill(
-    "asset_move_batch",
-    items=json.dumps(items, ensure_ascii=False),
-)
-```
-
-让 Unity `AssetDatabase` 处理路径变更并保持 `.meta` 和 GUID。
+移动两个及以上文件时 使用 Unity CLI 的 `eval` 或临时 CliCommand  实现。注意创建文件夹,有的Unity API不会自动创建文件夹.
 
 ## C# 编译
 
