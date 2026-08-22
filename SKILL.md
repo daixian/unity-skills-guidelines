@@ -36,6 +36,14 @@ unity_skills.call_skill(
 
 移动两个及以上文件时 使用 Unity CLI 的 `eval` 或临时 CliCommand  实现。注意创建文件夹,有的Unity API不会自动创建文件夹.
 
+## 场景画面抓取
+
+1. 普通 Unity Editor 场景画面抓取统一使用 `unity-skills`，并按画面来源加载 `scene` 或 `camera` 模块；不得仅因 `unity-cli-perception` 同样声明了截图能力，就自动改用 `unity command capture_scene_view`、`capture_game_view` 或 `screenshot`。
+2. 最终合成的 Game View（全部相机与 UI，Play Mode 下为实时运行画面）使用 `scene_screenshot`；指定单个 Game Camera 的离屏渲染使用 `camera_screenshot`；Editor Scene View 使用 `camera_sceneview_screenshot`。
+3. 只有用户明确要求使用官方 Unity CLI 时，才路由到 `unity-cli-perception`。UnitySkills 连接失败不构成自动改走 Unity CLI 的授权，仍按本 Skill 的连接失败规则重试并停止。
+4. Graphon 相机拍摄继续使用 `graphon-workflow`；Unity Editor 之外的老 EXE 或其他游戏窗口使用 `windows-game-window-capture`，不得与 Unity Editor 截图入口混用。
+5. 遵守目标截图 Skill 的保存路径契约：`scene_screenshot` 和 `camera_sceneview_screenshot` 的文件名不得包含路径分隔符，产物位于 `Assets/Screenshots/`；不得把裸的 `Output/...` 路径误认为项目根目录输出。
+
 ## C# 编译
 
 C# 修改后必须使用 Unity 编译，不要用 `dotnet` 替代：
