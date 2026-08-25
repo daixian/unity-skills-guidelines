@@ -1,4 +1,4 @@
 interface:
   display_name: "UnitySkills 使用规范"
-  short_description: "规范 CKStudy 项目的 UnitySkills 路由、安全调用与验证闭环"
-  default_prompt: "Use $unity-skills-guidelines to follow CKStudy project rules for routing and using UnitySkills safely, including connection, compilation, and tests."
+  short_description: "规范 UnitySkills 路由、安全调用与验证闭环"
+  default_prompt: "Use $unity-skills-guidelines to route and use UnitySkills safely, including connection, compilation, and tests."
