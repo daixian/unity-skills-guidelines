@@ -36,6 +36,23 @@ unity_skills.call_skill(
 
 移动两个及以上文件时 使用 Unity CLI 的 `eval` 或临时 CliCommand  实现。注意创建文件夹,有的Unity API不会自动创建文件夹.
 
+## 资源删除
+
+1. 删除 Unity 项目资源时，直接使用当前操作系统的文件系统命令删除；禁止调用
+   `AssetDatabase.DeleteAsset`、UnitySkills 删除接口或 Unity CLI `delete_asset`。
+   Unity 后续本来就会重新扫描和导入，不得为删除动作额外绕一层 AssetDatabase。
+2. 能以文件夹为单位删除时，必须一次删除整个目标文件夹；禁止先枚举文件夹内容，
+   再逐文件执行所谓“批量删除”。删除文件夹时，同时删除与其同级的
+   `<文件夹名>.meta`。
+3. 只有目标本身就是单个文件时，才逐文件删除，并同时删除对应的
+   `<文件名>.meta`。
+4. 删除前只做必要的精确路径核验：解析绝对路径，确认目标仍位于用户指定的项目
+   范围内，并拒绝项目根目录、工作区根目录、通配符、未解析变量和符号链接目标。
+   Windows 下应在同一个 PowerShell 调用中使用 `Remove-Item -LiteralPath`，不得跨
+   Shell 拼接删除命令。
+5. 删除完成后只验证目标资源及对应 `.meta` 已不存在，让 Unity 自行刷新和重新导入；
+   禁止再逐文件调用 `ImportAsset`、`Refresh`，也禁止为简单目录删除临时生成批处理脚本。
+
 ## 场景画面抓取
 
 1. 普通 Unity Editor 场景画面抓取统一使用 `unity-skills`，并按画面来源加载 `scene` 或 `camera` 模块；不得仅因 `unity-cli-perception` 同样声明了截图能力，就自动改用 `unity command capture_scene_view`、`capture_game_view` 或 `screenshot`。
