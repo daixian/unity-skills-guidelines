@@ -12,7 +12,9 @@ description: "规定 UnitySkills 的连接、模块选择、安全调用和验�
 1. 普通场景、资源、GameObject、组件、脚本和项目操作，加载 `.agents/skills/unity-skills` 下对应模块；不要在本 Skill 重复模块文档或猜测参数。
 2. 当前项目 C# 编译使用 `.agents/skills/unity-skills-guidelines/scripts/unity_compile.py`；Unity Test Runner 使用 `.agents/skills/unity-skills-guidelines/scripts/unity_test.py`。
 3. 运行时 UI 树检查、点击、拖动、滚轮和鼠标队列使用 `unity-ui-interaction`；创建或布局 UGUI 使用 `unity-ui-interaction`。
-4. 移动两个及以上文件时 使用 Unity CLI 的 `eval` 或临时 CliCommand  实现。
+4. 移动或删除 Unity 项目资产时，唯一允许的入口是
+   `unity command assets.file-operations.apply`。除该命令外，禁止使用任何其他 Unity Skill、任何其他
+   Unity CLI 命令、任何 `AssetDatabase` API、临时 Command 或操作系统文件命令执行移动或删除。
 
 ## 安全与调用规则
 
@@ -22,36 +24,45 @@ description: "规定 UnitySkills 的连接、模块选择、安全调用和验�
 4. 修改场景内容时优先使用对应 UnitySkills 模块。未打开的目标场景先通过模块加载；不要直接编辑 `.unity` YAML。
 5. 连接失败时先按 Unity 正在编译或 Domain Reload 的瞬时状态处理：优先遵循返回的 `retryAfterSeconds`；没有明确等待时间时，等待 5 秒后重试，最多重试 3 次。连续失败后再提示用户打开 `Window > UnitySkills > Start Server` 并停止；不要修改项目配置、扫描端口或绕过连接规则。
 
-## 资产移动
+## 资产文件操作
 
-移动一个 Unity 项目内代码文件或资产时，优先调用：
+移动或删除 Unity 项目内代码文件、目录和资产时，统一调用该命令；一次请求可包含一项或多项操作。
 
-```python
-unity_skills.call_skill(
-    "asset_move",
-    sourcePath=source_path,
-    destinationPath=destination_path,
-)
+传入 JSON 文件：
+
+```powershell
+unity command assets.file-operations.apply `
+  --requestJson <操作参数.json> `
+  --project-path <Unity项目根目录>
 ```
 
-移动两个及以上文件时 使用 Unity CLI 的 `eval` 或临时 CliCommand  实现。注意创建文件夹,有的Unity API不会自动创建文件夹.
+直接传入 JSON：
 
-## 资源删除
+```powershell
+unity command assets.file-operations.apply `
+  --requestJson '{"operations":[{"type":"move","source":"Packages/example/Old","destination":"Packages/example/New"},{"type":"delete","source":"Packages/example/Obsolete"}]}' `
+  --project-path <Unity项目根目录>
+```
 
-1. 删除 Unity 项目资源时，直接使用当前操作系统的文件系统命令删除；禁止调用
-   `AssetDatabase.DeleteAsset`、UnitySkills 删除接口或 Unity CLI `delete_asset`。
-   Unity 后续本来就会重新扫描和导入，不得为删除动作额外绕一层 AssetDatabase。
-2. 能以文件夹为单位删除时，必须一次删除整个目标文件夹；禁止先枚举文件夹内容，
-   再逐文件执行所谓“批量删除”。删除文件夹时，同时删除与其同级的
-   `<文件夹名>.meta`。
-3. 只有目标本身就是单个文件时，才逐文件删除，并同时删除对应的
-   `<文件名>.meta`。
-4. 删除前只做必要的精确路径核验：解析绝对路径，确认目标仍位于用户指定的项目
-   范围内，并拒绝项目根目录、工作区根目录、通配符、未解析变量和符号链接目标。
-   Windows 下应在同一个 PowerShell 调用中使用 `Remove-Item -LiteralPath`，不得跨
-   Shell 拼接删除命令。
-5. 删除完成后只验证目标资源及对应 `.meta` 已不存在，让 Unity 自行刷新和重新导入；
-   禁止再逐文件调用 `ImportAsset`、`Refresh`，也禁止为简单目录删除临时生成批处理脚本。
+`requestJson` 支持内联 JSON，也支持绝对或项目根相对的 `.json` 文件路径。请求中的 `move`
+操作填写 `source` 和 `destination`，`delete` 操作只填写 `source`；操作路径支持绝对路径或
+相对于 Unity 项目根目录的路径。命令返回整批及逐项执行结果，
+并在 `Dev/Logs/文件操作记录` 写入带时间戳的 JSON 记录。
+
+# Unity 批量资产导入性能规范
+
+- 设计批量资产处理时，应留意在内层循环逐文件调用同步
+  `AssetDatabase.ImportAsset`、`AssetImporter.SaveAndReimport` 或
+  `AssetDatabase.Refresh` 的成本，避免无意中产生大量重复导入。
+- 如果业务允许，优先采用分阶段处理：先复制或生成一批文件，再集中刷新、配置
+  Importer、创建引用资产和构建图集。
+- 同一个文件的 Importer 设置应尽量一次写完，减少不必要的连续
+  `SaveAndReimport`。
+- 如果后续逻辑确实需要立即读取刚导入的对象，或必须逐文件确认导入结果，可以使用
+  逐文件同步导入；实现时应确认这是必要条件，并尽量控制调用次数。
+- 设计涉及大量 Unity 资产的 Editor 工具时，建议在实现前大致估算
+  `ImportAsset`、`SaveAndReimport`、`Refresh` 和 `SaveAssets` 的调用规模，
+  优先排查调用次数随文件数量快速增长的实现。
 
 ## 场景画面抓取
 
