@@ -2,9 +2,10 @@
 """通过项目 UnitySkills helper 编译 Unity 脚本并读取错误。
 
 本脚本实现 UnitySkills 使用规范中的 Unity 编译流程：
+- 先刷新 AssetDatabase 并等待该次刷新完成，消化外部脚本文件变更；
 - 清空控制台；
 - 请求 Unity 脚本重新编译；
-- 轮询 debug_get_errors 和 debug_check_compilation，直到 Unity 状态稳定。
+- 核验本次编译 job 的编译周期与 Domain Reload 结果，再读取稳定错误状态。
 """
 
 from __future__ import annotations
@@ -122,6 +123,10 @@ def is_transient_result(result: Any) -> bool:
     if result.get("success") is True:
         return False
 
+    # Domain Reload期间job读取可能收到非JSON的400响应；仅重试已提交job的读取，不重新提交编译。
+    if result.get("transportError") in ("connection", "timeout", "invalid_response"):
+        return True
+
     text = json.dumps(result, ensure_ascii=False, default=str).lower()
     return any(fragment in text for fragment in TRANSIENT_ERROR_FRAGMENTS)
 
@@ -225,6 +230,47 @@ def check_health(unity_skills) -> Any:
     return unity_skills.health()
 
 
+def wait_editor_job(unity_skills, job_id: str, args: argparse.Namespace) -> Dict[str, Any]:
+    """只轮询已接受的本次job；超时不是完成，不重复提交刷新或编译。"""
+    deadline = time.monotonic() + max(1.0, args.timeout)
+    last: Dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        value = unity_skills.get_job(job_id)
+        if isinstance(value, dict):
+            last = value
+            if value.get("jobId") == job_id and value.get("terminal") is True:
+                return value
+            if value.get("jobId") != job_id and not is_transient_result(value) and not value.get("retryable"):
+                return value
+        time.sleep(min(max(0.5, args.interval), max(0.0, deadline - time.monotonic())))
+    return {**last, "wait_timed_out": True}
+
+
+def compilation_job_succeeded(job: Dict[str, Any], required: bool) -> bool:
+    """要求真实终态；强制编译必须有本次程序集编译和域加载证据。"""
+    if job.get("wait_timed_out") or job.get("terminal") is not True or job.get("status") != "completed":
+        return False
+    result_data = job.get("resultData")
+    compilation = result_data.get("compilation") if isinstance(result_data, dict) else None
+    if not isinstance(compilation, dict):
+        return False
+    if compilation.get("hasErrors") or compilation.get("errorCount", 0):
+        return False
+    if not required and compilation.get("compiled") is False:
+        return True
+    return all(compilation.get(key) is True for key in ("compiled", "success", "domainLoaded"))
+
+
+def fail_preparation(payload: Dict[str, Any], args: argparse.Namespace, message: str) -> int:
+    """准备或本次编译证据不足时明确失败，不能读取上一轮零错误冒充成功。"""
+    payload["error"] = message
+    if args.json:
+        print_json(payload)
+    else:
+        print(message)
+    return 1
+
+
 def run_compile(unity_skills, args: argparse.Namespace) -> int:
     """运行 Unity 编译流程并返回进程退出码。"""
     payload: Dict[str, Any] = {
@@ -244,8 +290,37 @@ def run_compile(unity_skills, args: argparse.Namespace) -> int:
         print_missing_server(payload, args.json)
         return 2
 
+    refresh = unity_skills.call_skill("asset_refresh")
+    payload["asset_refresh"] = refresh
+    if not isinstance(refresh, dict) or refresh.get("success") is not True:
+        return fail_preparation(payload, args, "AssetDatabase刷新未确认成功；未请求重编译。")
+    refresh_compiled = False
+    if refresh.get("jobId"):
+        refresh_job = wait_editor_job(unity_skills, refresh["jobId"], args)
+        payload["asset_refresh_job"] = refresh_job
+        if not compilation_job_succeeded(refresh_job, required=False):
+            return fail_preparation(payload, args, "AssetDatabase刷新/编译未成功终结；未请求重编译。")
+        refresh_compiled = refresh_job["resultData"]["compilation"].get("compiled") is True
+    elif refresh.get("compileTriggered") is not False:
+        return fail_preparation(payload, args, "刷新可能触发编译但缺少可跟踪job；拒绝继续。")
+
     payload["console_clear"] = unity_skills.call_skill("console_clear")
-    payload["debug_force_recompile"] = unity_skills.call_skill("debug_force_recompile")
+    if not isinstance(payload["console_clear"], dict) or payload["console_clear"].get("success") is not True:
+        return fail_preparation(payload, args, "刷新后Console清理失败；未请求重编译。")
+    if refresh_compiled:
+        # 同一次调用中的刷新已经产生可验证编译，不再次清缓存重编译全部程序集。
+        payload["compilation_source"] = "asset_refresh"
+        payload["compilation_job"] = refresh_job
+    else:
+        compilation_request = unity_skills.call_skill("debug_force_recompile")
+        payload["debug_force_recompile"] = compilation_request
+        if not isinstance(compilation_request, dict) or compilation_request.get("success") is not True or not compilation_request.get("jobId"):
+            return fail_preparation(payload, args, "本次重编译请求未确认接受；不能用历史编译状态判定成功。")
+        compilation_job = wait_editor_job(unity_skills, compilation_request["jobId"], args)
+        payload["compilation_job"] = compilation_job
+        payload["compilation_source"] = "debug_force_recompile"
+        if not compilation_job_succeeded(compilation_job, required=True):
+            return fail_preparation(payload, args, "本次编译job未成功编译并完成域加载。")
 
     deadline = time.monotonic() + max(1.0, args.timeout)
     last_errors: Any = {}

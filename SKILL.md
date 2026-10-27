@@ -89,7 +89,7 @@ C# 修改后必须使用 Unity 编译，不要用 `dotnet` 替代：
 python .agents/skills/unity-skills-guidelines/scripts/unity_compile.py
 ```
 
-脚本会清理本轮 Console、触发 Unity 重编译、跨 Domain Reload 轮询状态并读取错误。成功标准是进程退出码为 `0` 且 `errors=0`。
+脚本先通过正式 `asset_refresh` 同步外部文件改动并等待其 job 终态；若本次刷新已完成真实编译，直接使用该次编译证据，否则才请求强制重编译。必须核验本次编译 job 的 compiled/success/domainLoaded，不能使用上一轮编译状态冒充成功。之后清理历史 Console 噪声并读取稳定错误状态，成功标准是进程退出码为 `0` 且 `errors=0`。刷新或编译请求超时不等于任务结束，不重复提交。
 
 ## Unity Test Runner
 
