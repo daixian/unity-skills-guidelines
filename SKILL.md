@@ -11,7 +11,7 @@ description: "规定 UnitySkills 的连接、模块选择、安全调用和验�
 
 1. 普通场景、资源、GameObject、组件、脚本和项目操作，加载 `.agents/skills/unity-skills` 下对应模块；不要在本 Skill 重复模块文档或猜测参数。
 2. 当前项目 C# 编译使用 `.agents/skills/unity-skills-guidelines/scripts/unity_compile.py`；Unity Test Runner 使用 `.agents/skills/unity-skills-guidelines/scripts/unity_test.py`。
-3. 运行时 UI 树检查、点击、拖动、滚轮和鼠标队列使用 `unity-ui-interaction`；创建或布局 UGUI 使用 `unity-ui-interaction`。
+3. 运行时 UI 树检查、点击、拖动、滚轮和鼠标队列使用 `scene-tests`；创建或布局 UGUI 使用底层 UnitySkills 的场景和组件编辑模块。
 4. 移动或删除 Unity 项目资产时，唯一允许的入口是
    `unity command assets.file-operations.apply`。除该命令外，禁止使用任何其他 Unity Skill、任何其他
    Unity CLI 命令、任何 `AssetDatabase` API、临时 Command 或操作系统文件命令执行移动或删除。
